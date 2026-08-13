@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>주식 정보 뷰어</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card-bg: #ffffff;
+    --text: #1a1c1e;
+    --sub: #6b7280;
+    --border: #e5e7eb;
+    --up: #d32f2f;      /* 한국 증시 관례: 상승 = 빨강 */
+    --down: #1565c0;    /* 한국 증시 관례: 하락 = 파랑 */
+    --flat: #6b7280;
+    --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px 16px 60px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header .updated { font-size: 12px; color: var(--sub); }
+
+  .search-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .search-row { display: flex; gap: 8px; }
+  .search-row input {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    outline: none;
+  }
+  .search-row input:focus { border-color: var(--accent); }
+  .search-row button {
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 8px;
+    padding: 0 16px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .search-row button:disabled { opacity: .6; cursor: default; }
+  .search-status { font-size: 12px; color: var(--sub); margin-top: 8px; padding: 0 2px; }
+  .search-status.error { color: #991b1b; }
+  .search-results {
+    margin-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .search-result-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 6px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .search-result-item:last-child { border-bottom: none; }
+  .search-result-item:hover { background: #f4f5f7; }
+  .search-result-item .r-name { font-size: 14px; font-weight: 600; }
+  .search-result-item .r-symbol { font-size: 12px; color: var(--sub); }
+  .search-result-item .r-meta { font-size: 11px; color: var(--sub); text-align: right; white-space: nowrap; }
+
+  .price-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .price-card .name { font-size: 14px; color: var(--sub); margin-bottom: 4px; }
+  .price-card .current { font-size: 40px; font-weight: 700; line-height: 1.1; }
+  .price-card .delta { font-size: 16px; font-weight: 600; margin-top: 6px; }
+  .price-card .delta.up { color: var(--up); }
+  .price-card .delta.down { color: var(--down); }
+  .price-card .delta.flat { color: var(--flat); }
+
+  .range-block { margin-top: 24px; }
+  .range-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--sub); margin-bottom: 6px; }
+  .range-track {
+    position: relative;
+    height: 8px;
+    background: linear-gradient(90deg, var(--down), #d1d5db 50%, var(--up));
+    border-radius: 4px;
+  }
+  .range-marker {
+    position: absolute;
+    top: -6px;
+    width: 4px;
+    height: 20px;
+    background: var(--text);
+    border-radius: 2px;
+    transform: translateX(-50%);
+  }
+  .range-marker::after {
+    content: attr(data-label);
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--text);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .card .label { font-size: 12px; color: var(--sub); margin-bottom: 6px; }
+  .card .value { font-size: 20px; font-weight: 700; }
+  .card .sub { font-size: 12px; color: var(--sub); margin-top: 4px; }
+  .card .value.up { color: var(--up); }
+  .card .value.down { color: var(--down); }
+
+  .section-title { font-size: 13px; font-weight: 700; color: var(--sub); margin: 24px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+
+  .footer-note {
+    margin-top: 24px;
+    font-size: 12px;
+    color: var(--sub);
+    line-height: 1.6;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #fef3c7;
+    color: #92400e;
+    margin-left: 6px;
+  }
+
+  .status-banner {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .status-banner.show { display: block; }
+
+  button#refreshBtn {
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text);
+  }
+  button#refreshBtn:hover { background: #f0f0f0; }
+
+  .skeleton { color: var(--sub); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="stockTitle">주식 정보 뷰어</h1>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span class="updated" id="updatedAt">로딩 중...</span>
+      <button id="refreshBtn">새로고침</button>
+    </div>
+  </header>
+
+  <div class="search-card">
+    <div class="search-row">
+      <input id="searchInput" type="text" placeholder="종목명 또는 티커 검색 (예: 삼성전자, 애플, AAPL)" autocomplete="off">
+      <button id="searchBtn">검색</button>
+    </div>
+    <div class="search-status" id="searchStatus"></div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+
+  <div class="status-banner" id="statusBanner"></div>
+
+  <div class="price-card">
+    <div class="name" id="quoteMeta">종목 정보를 불러오는 중...</div>
+    <div class="current skeleton" id="currentPrice">-</div>
+    <div class="delta flat" id="dayDelta">전일 대비 데이터 없음</div>
+
+    <div class="range-block">
+      <div class="range-labels">
+        <span id="lowLabel">52주 저가</span>
+        <span id="highLabel">52주 고가</span>
+      </div>
+      <div class="range-track">
+        <div class="range-marker" id="rangeMarker" style="left:50%;" data-label=""></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">52주 고저 대비</div>
+  <div class="grid">
+    <div class="card">
+      <div class="label">52주 고가 대비</div>
+      <div class="value" id="vsHigh">-</div>
+      <div class="sub" id="vsHighAbs"></div>
+    </div>
+    <div class="card">
+      <div class="label">52주 저가 대비</div>
+      <div class="value" id="vsLow">-</div>
+      <div class="sub" id="vsLowAbs"></div>
+    </div>
+  </div>
+
+  <div class="section-title">배당 정보</div>
+  <div class="grid">
+    <div class="card">
+      <div class="label">최근 배당금 (주당)</div>
+      <div class="value" id="lastDividend">-</div>
+      <div class="sub" id="lastDividendDate"></div>
+    </div>
+    <div class="card">
+      <div class="label">배당수익률<span class="badge" id="yieldBadge" style="display:none;">추정</span></div>
+      <div class="value" id="dividendYield">-</div>
+      <div class="sub" id="dividendYieldSub"></div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    데이터 출처: Yahoo Finance (비공식 공개 API, 지연 시세일 수 있음). 브라우저 CORS 제한으로 직접 호출이 막힐 경우
+    공개 CORS 프록시를 통해 자동으로 재시도합니다. 위 검색창에서 종목명이나 티커를 입력하면 다른 종목으로 바로 전환할 수 있습니다.
+  </div>
+</div>
+
+<script>
+(function () {
+  // ---- 설정 ----------------------------------------------------------
+  var DEFAULT_SYMBOL = "005930.KS"; // 삼성전자
+  var LAST_SYMBOL_KEY = "stockpriceview:lastSymbol";
+  var AUTO_REFRESH_MS = 60 * 1000; // 1분마다 자동 갱신
+
+  var currentSymbol = null;
+  var refreshTimer = null;
+
+  // 직접 호출이 CORS로 막힐 경우 순서대로 시도하는 공개 프록시 목록
+  var PROXY_WRAPPERS = [
+    function (url) { return url; },
+    function (url) { return "https://corsproxy.io/?url=" + encodeURIComponent(url); },
+    function (url) { return "https://api.allorigins.win/raw?url=" + encodeURIComponent(url); }
+  ];
+
+  function quoteSummaryUrl(symbol) {
+    return "https://query1.finance.yahoo.com/v10/finance/quoteSummary/" + encodeURIComponent(symbol) +
+      "?modules=summaryDetail,price";
+  }
+  function chartUrl(symbol) {
+    return "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(symbol) +
+      "?range=1y&interval=1d&events=div";
+  }
+  function searchUrl(query) {
+    return "https://query2.finance.yahoo.com/v1/finance/search?quotesCount=8&newsCount=0&q=" + encodeURIComponent(query);
+  }
+  function cacheKey(symbol) { return "stockpriceview:" + symbol; }
+
+  // ---- 엘리먼트 --------------------------------------------------------
+  var els = {
+    title: document.getElementById("stockTitle"),
+    updatedAt: document.getElementById("updatedAt"),
+    statusBanner: document.getElementById("statusBanner"),
+    quoteMeta: document.getElementById("quoteMeta"),
+    currentPrice: document.getElementById("currentPrice"),
+    dayDelta: document.getElementById("dayDelta"),
+    lowLabel: document.getElementById("lowLabel"),
+    highLabel: document.getElementById("highLabel"),
+    rangeMarker: document.getElementById("rangeMarker"),
+    vsHigh: document.getElementById("vsHigh"),
+    vsHighAbs: document.getElementById("vsHighAbs"),
+    vsLow: document.getElementById("vsLow"),
+    vsLowAbs: document.getElementById("vsLowAbs"),
+    lastDividend: document.getElementById("lastDividend"),
+    lastDividendDate: document.getElementById("lastDividendDate"),
+    dividendYield: document.getElementById("dividendYield"),
+    dividendYieldSub: document.getElementById("dividendYieldSub"),
+    yieldBadge: document.getElementById("yieldBadge"),
+    refreshBtn: document.getElementById("refreshBtn"),
+    searchInput: document.getElementById("searchInput"),
+    searchBtn: document.getElementById("searchBtn"),
+    searchStatus: document.getElementById("searchStatus"),
+    searchResults: document.getElementById("searchResults")
+  };
+
+  // ---- 유틸 ------------------------------------------------------------
+  function fmtNumber(n, digits) {
+    if (n === null || n === undefined || isNaN(n)) return "-";
+    return n.toLocaleString("ko-KR", { maximumFractionDigits: digits === undefined ? 2 : digits, minimumFractionDigits: 0 });
+  }
+
+  function fmtCurrency(n, currency) {
+    if (n === null || n === undefined || isNaN(n)) return "-";
+    var symbol = currency === "KRW" ? "₩" : (currency ? currency + " " : "");
+    return symbol + fmtNumber(n, currency === "KRW" ? 0 : 2);
+  }
+
+  function fmtPercent(n) {
+    if (n === null || n === undefined || isNaN(n)) return "-";
+    var sign = n > 0 ? "+" : "";
+    return sign + fmtNumber(n, 2) + "%";
+  }
+
+  function deltaClass(n) {
+    if (n === null || n === undefined || isNaN(n) || n === 0) return "flat";
+    return n > 0 ? "up" : "down";
+  }
+
+  async function fetchJSON(url) {
+    var lastErr = null;
+    for (var i = 0; i < PROXY_WRAPPERS.length; i++) {
+      var wrapped = PROXY_WRAPPERS[i](url);
+      try {
+        var res = await fetch(wrapped, { headers: { "Accept": "application/json" } });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        var text = await res.text();
+        return JSON.parse(text);
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error("모든 요청 경로가 실패했습니다.");
+  }
+
+  function showBanner(msg) {
+    els.statusBanner.textContent = msg;
+    els.statusBanner.classList.add("show");
+  }
+  function hideBanner() {
+    els.statusBanner.classList.remove("show");
+  }
+
+  function saveCache(symbol, data) {
+    try {
+      localStorage.setItem(cacheKey(symbol), JSON.stringify({ data: data, savedAt: Date.now() }));
+    } catch (e) { /* localStorage 사용 불가 시 무시 */ }
+  }
+  function loadCache(symbol) {
+    try {
+      var raw = localStorage.getItem(cacheKey(symbol));
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  // ---- 데이터 파싱 -------------------------------------------------------
+  // 1순위: quoteSummary (가격, 52주 고저, 배당수익률까지 한 번에 제공)
+  function parseQuoteSummary(symbol, json) {
+    var result = json && json.quoteSummary && json.quoteSummary.result && json.quoteSummary.result[0];
+    if (!result) throw new Error("quoteSummary 응답 형식이 예상과 다릅니다.");
+    var price = result.price || {};
+    var detail = result.summaryDetail || {};
+
+    function raw(field) { return field && typeof field.raw === "number" ? field.raw : null; }
+
+    var currentPrice = raw(price.regularMarketPrice);
+    var changePercent = raw(price.regularMarketChangePercent);
+    if (changePercent !== null) changePercent *= 100;
+
+    var dividendYield = raw(detail.dividendYield);
+    if (dividendYield !== null) dividendYield *= 100;
+
+    return {
+      symbol: symbol,
+      shortName: price.shortName || price.longName || symbol,
+      currency: price.currency || detail.currency || "",
+      currentPrice: currentPrice,
+      changePercent: changePercent,
+      fiftyTwoWeekHigh: raw(detail.fiftyTwoWeekHigh),
+      fiftyTwoWeekLow: raw(detail.fiftyTwoWeekLow),
+      dividendRate: raw(detail.dividendRate),
+      dividendYield: dividendYield,
+      dividendYieldEstimated: false,
+      exDividendDate: detail.exDividendDate && detail.exDividendDate.fmt,
+      lastDividendAmount: null,
+      lastDividendDate: null
+    };
+  }
+
+  // 2순위: chart API (quoteSummary가 막혔을 때의 대체 경로, 배당수익률은 추정치)
+  function parseChart(symbol, json) {
+    var result = json && json.chart && json.chart.result && json.chart.result[0];
+    if (!result) throw new Error("chart 응답 형식이 예상과 다릅니다.");
+    var meta = result.meta || {};
+    var currentPrice = meta.regularMarketPrice;
+    var prevClose = meta.previousClose || meta.chartPreviousClose;
+    var changePercent = (currentPrice != null && prevClose) ? ((currentPrice - prevClose) / prevClose) * 100 : null;
+
+    var dividends = (result.events && result.events.dividends) || {};
+    var divList = Object.keys(dividends).map(function (k) { return dividends[k]; })
+      .sort(function (a, b) { return b.date - a.date; });
+    var last = divList[0];
+    var trailingSum = divList.slice(0, 4).reduce(function (s, d) { return s + (d.amount || 0); }, 0);
+    var estimatedYield = (trailingSum > 0 && currentPrice) ? (trailingSum / currentPrice) * 100 : null;
+
+    return {
+      symbol: symbol,
+      shortName: meta.symbol || symbol,
+      currency: meta.currency || "",
+      currentPrice: currentPrice,
+      changePercent: changePercent,
+      fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
+      fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
+      dividendRate: trailingSum || null,
+      dividendYield: estimatedYield,
+      dividendYieldEstimated: true,
+      exDividendDate: null,
+      lastDividendAmount: last ? last.amount : null,
+      lastDividendDate: last ? new Date(last.date * 1000).toISOString().slice(0, 10) : null
+    };
+  }
+
+  async function loadData(symbol) {
+    try {
+      var qs = await fetchJSON(quoteSummaryUrl(symbol));
+      var parsed = parseQuoteSummary(symbol, qs);
+      // 배당 지급 이력(최근 배당일/금액)은 chart API에서 보강 시도 (실패해도 치명적이지 않음)
+      try {
+        var chartJson = await fetchJSON(chartUrl(symbol));
+        var chartParsed = parseChart(symbol, chartJson);
+        if (parsed.dividendRate == null) parsed.dividendRate = chartParsed.dividendRate;
+        parsed.lastDividendAmount = chartParsed.lastDividendAmount;
+        parsed.lastDividendDate = chartParsed.lastDividendDate;
+      } catch (e2) { /* 배당 이력 보강 실패는 무시 */ }
+      return parsed;
+    } catch (e1) {
+      // quoteSummary 전체 실패 시 chart API만으로 대체
+      var chartJson2 = await fetchJSON(chartUrl(symbol));
+      return parseChart(symbol, chartJson2);
+    }
+  }
+
+  // ---- 렌더링 ------------------------------------------------------------
+  function render(d) {
+    els.title.textContent = (d.shortName || d.symbol) + " (" + d.symbol + ")";
+    els.quoteMeta.textContent = d.symbol + (d.currency ? " · " + d.currency : "");
+
+    els.currentPrice.textContent = fmtCurrency(d.currentPrice, d.currency);
+    els.currentPrice.classList.remove("skeleton");
+
+    var dc = deltaClass(d.changePercent);
+    els.dayDelta.className = "delta " + dc;
+    els.dayDelta.textContent = "전일 대비 " + fmtPercent(d.changePercent);
+
+    els.lowLabel.textContent = "52주 저가 " + fmtCurrency(d.fiftyTwoWeekLow, d.currency);
+    els.highLabel.textContent = "52주 고가 " + fmtCurrency(d.fiftyTwoWeekHigh, d.currency);
+
+    if (d.fiftyTwoWeekHigh && d.fiftyTwoWeekLow && d.currentPrice != null && d.fiftyTwoWeekHigh > d.fiftyTwoWeekLow) {
+      var pct = ((d.currentPrice - d.fiftyTwoWeekLow) / (d.fiftyTwoWeekHigh - d.fiftyTwoWeekLow)) * 100;
+      pct = Math.max(0, Math.min(100, pct));
+      els.rangeMarker.style.left = pct + "%";
+      els.rangeMarker.setAttribute("data-label", fmtCurrency(d.currentPrice, d.currency));
+    }
+
+    var vsHighPct = (d.currentPrice != null && d.fiftyTwoWeekHigh) ? ((d.currentPrice - d.fiftyTwoWeekHigh) / d.fiftyTwoWeekHigh) * 100 : null;
+    var vsLowPct = (d.currentPrice != null && d.fiftyTwoWeekLow) ? ((d.currentPrice - d.fiftyTwoWeekLow) / d.fiftyTwoWeekLow) * 100 : null;
+
+    els.vsHigh.textContent = fmtPercent(vsHighPct);
+    els.vsHigh.className = "value " + deltaClass(vsHighPct);
+    els.vsHighAbs.textContent = d.fiftyTwoWeekHigh ? "고가 " + fmtCurrency(d.fiftyTwoWeekHigh, d.currency) : "";
+
+    els.vsLow.textContent = fmtPercent(vsLowPct);
+    els.vsLow.className = "value " + deltaClass(vsLowPct);
+    els.vsLowAbs.textContent = d.fiftyTwoWeekLow ? "저가 " + fmtCurrency(d.fiftyTwoWeekLow, d.currency) : "";
+
+    els.lastDividend.textContent = d.lastDividendAmount != null ? fmtCurrency(d.lastDividendAmount, d.currency) : (d.dividendRate != null ? fmtCurrency(d.dividendRate, d.currency) + " (연간)" : "-");
+    els.lastDividendDate.textContent = d.lastDividendDate ? "지급일 " + d.lastDividendDate : (d.exDividendDate ? "배당락일 " + d.exDividendDate : "");
+
+    els.dividendYield.textContent = d.dividendYield != null ? fmtPercent(d.dividendYield).replace("+", "") : "-";
+    els.dividendYieldSub.textContent = d.dividendYieldEstimated ? "최근 4회 배당 합계 기준 추정치" : "";
+    els.yieldBadge.style.display = d.dividendYieldEstimated ? "inline-block" : "none";
+
+    els.updatedAt.textContent = "마지막 업데이트: " + new Date().toLocaleTimeString("ko-KR");
+  }
+
+  function renderFromCacheIfAny(symbol, msg) {
+    var cached = loadCache(symbol);
+    if (cached && cached.data) {
+      render(cached.data);
+      els.updatedAt.textContent = "캐시된 데이터 (" + new Date(cached.savedAt).toLocaleString("ko-KR") + ")";
+      showBanner(msg + " 최근에 저장된 데이터를 대신 표시합니다.");
+    } else {
+      showBanner(msg + " 표시할 이전 데이터도 없습니다. 잠시 후 다시 시도해 주세요.");
+    }
+  }
+
+  async function refresh() {
+    var symbol = currentSymbol;
+    els.refreshBtn.disabled = true;
+    els.refreshBtn.textContent = "불러오는 중...";
+    try {
+      var data = await loadData(symbol);
+      if (symbol !== currentSymbol) return; // 로딩 도중 다른 종목으로 전환된 경우 무시
+      hideBanner();
+      render(data);
+      saveCache(symbol, data);
+    } catch (e) {
+      if (symbol !== currentSymbol) return;
+      console.error(e);
+      renderFromCacheIfAny(symbol, "데이터를 불러오지 못했습니다 (" + (e && e.message ? e.message : "네트워크 오류") + ").");
+    } finally {
+      if (symbol === currentSymbol) {
+        els.refreshBtn.disabled = false;
+        els.refreshBtn.textContent = "새로고침";
+      }
+    }
+  }
+
+  function selectSymbol(symbol) {
+    currentSymbol = symbol;
+    try { localStorage.setItem(LAST_SYMBOL_KEY, symbol); } catch (e) { /* 무시 */ }
+
+    els.searchResults.innerHTML = "";
+    els.searchStatus.textContent = "";
+    els.searchStatus.classList.remove("error");
+    els.searchInput.value = "";
+
+    els.currentPrice.classList.add("skeleton");
+    els.currentPrice.textContent = "-";
+    els.quoteMeta.textContent = symbol + " 정보를 불러오는 중...";
+    hideBanner();
+
+    if (refreshTimer) clearInterval(refreshTimer);
+    refresh();
+    refreshTimer = setInterval(refresh, AUTO_REFRESH_MS);
+  }
+
+  // ---- 검색 --------------------------------------------------------------
+  function renderSearchResults(quotes) {
+    els.searchResults.innerHTML = "";
+    if (!quotes.length) {
+      els.searchStatus.textContent = "검색 결과가 없습니다. 다른 검색어로 시도해 보세요.";
+      return;
+    }
+    els.searchStatus.textContent = quotes.length + "개 결과. 종목을 선택하세요.";
+    quotes.forEach(function (q) {
+      var item = document.createElement("div");
+      item.className = "search-result-item";
+
+      var left = document.createElement("div");
+      var name = document.createElement("div");
+      name.className = "r-name";
+      name.textContent = q.longname || q.shortname || q.symbol;
+      var symbolLine = document.createElement("div");
+      symbolLine.className = "r-symbol";
+      symbolLine.textContent = q.symbol;
+      left.appendChild(name);
+      left.appendChild(symbolLine);
+
+      var right = document.createElement("div");
+      right.className = "r-meta";
+      right.textContent = [q.exchDisp, q.typeDisp].filter(Boolean).join(" · ");
+
+      item.appendChild(left);
+      item.appendChild(right);
+      item.addEventListener("click", function () { selectSymbol(q.symbol); });
+      els.searchResults.appendChild(item);
+    });
+  }
+
+  async function runSearch() {
+    var query = els.searchInput.value.trim();
+    if (!query) {
+      els.searchStatus.textContent = "검색어를 입력해 주세요.";
+      els.searchStatus.classList.add("error");
+      return;
+    }
+    els.searchBtn.disabled = true;
+    els.searchBtn.textContent = "검색 중...";
+    els.searchStatus.classList.remove("error");
+    els.searchStatus.textContent = "검색 중...";
+    els.searchResults.innerHTML = "";
+    try {
+      var json = await fetchJSON(searchUrl(query));
+      var quotes = (json && json.quotes) || [];
+      quotes = quotes.filter(function (q) { return q.symbol; });
+      renderSearchResults(quotes);
+    } catch (e) {
+      console.error(e);
+      els.searchStatus.textContent = "검색에 실패했습니다 (" + (e && e.message ? e.message : "네트워크 오류") + "). 잠시 후 다시 시도해 주세요.";
+      els.searchStatus.classList.add("error");
+    } finally {
+      els.searchBtn.disabled = false;
+      els.searchBtn.textContent = "검색";
+    }
+  }
+
+  els.searchBtn.addEventListener("click", runSearch);
+  els.searchInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") runSearch();
+  });
+  els.refreshBtn.addEventListener("click", refresh);
+
+  // ---- 시작 --------------------------------------------------------------
+  var initialSymbol = DEFAULT_SYMBOL;
+  try {
+    var stored = localStorage.getItem(LAST_SYMBOL_KEY);
+    if (stored) initialSymbol = stored;
+  } catch (e) { /* 무시 */ }
+  selectSymbol(initialSymbol);
+})();
+</script>
+</body>
+</html>
